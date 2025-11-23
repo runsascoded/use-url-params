@@ -40,8 +40,11 @@ jobs:
 
       - name: Checkout dist branch
         run: |
-          git fetch origin dist:dist || git checkout --orphan dist
-          git checkout dist
+          if git fetch origin dist:dist 2>/dev/null; then
+            git checkout dist
+          else
+            git checkout --orphan dist
+          fi
 
       - name: Configure git
         run: |
