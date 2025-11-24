@@ -29,12 +29,16 @@ git clean -fdx -e dist -e node_modules -e package.json.dist
 mv dist/* . 2>/dev/null || true
 rmdir dist 2>/dev/null || true
 
-# Restore dist branch's package.json (or add metadata from source if first build)
+# Restore dist branch's package.json
 if [ -f package.json.dist ]; then
   mv package.json.dist package.json
 else
-  # First build: checkout from source and fix paths
-  git checkout "$SOURCE_SHA" -- package.json README.md LICENSE 2>/dev/null || true
+  echo "ERROR: No package.json found on dist branch"
+  echo "This script requires an existing dist branch with a package.json"
+  echo "For initial dist branch setup, manually create package.json with correct paths:"
+  echo "  main: ./index.cjs (not ./dist/index.cjs)"
+  echo "  module: ./index.js (not ./dist/index.js)"
+  exit 1
 fi
 
 # Stage all changes
