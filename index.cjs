@@ -113,16 +113,21 @@ function useUrlParam(key, param, push = false) {
     getUrlSnapshot,
     getServerSnapshot
   );
-  const value = param.decode(urlParams[key]);
+  const encoded = urlParams[key];
+  const cacheRef = react.useRef(null);
+  if (cacheRef.current === null || cacheRef.current.encoded !== encoded) {
+    cacheRef.current = { encoded, decoded: param.decode(encoded) };
+  }
+  const value = cacheRef.current.decoded;
   const setValue = react.useCallback(
     (newValue) => {
       if (typeof window === "undefined") return;
       const currentParams = getCurrentParams();
-      const encoded = paramRef.current.encode(newValue);
-      if (encoded === void 0) {
+      const encoded2 = paramRef.current.encode(newValue);
+      if (encoded2 === void 0) {
         delete currentParams[key];
       } else {
-        currentParams[key] = encoded;
+        currentParams[key] = encoded2;
       }
       const url = new URL(window.location.href);
       url.search = serializeParams(currentParams);
