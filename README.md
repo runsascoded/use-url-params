@@ -10,6 +10,8 @@ Type-safe URL query parameter management with minimal, human-readable encoding.
 - 🔧 **Framework-agnostic**: Core utilities work anywhere, React hooks are optional
 - 🌳 **Tree-shakeable**: ESM + CJS builds with TypeScript declarations
 - 0️⃣ **Zero dependencies**: Except React (peer dependency, optional)
+- 🔁 **Multi-value params**: Support for repeated keys like `?tag=a&tag=b`
+- #️⃣ **Hash params**: Use hash fragment (`#key=value`) instead of query string
 
 ## Installation
 
@@ -78,12 +80,20 @@ const [theme, setTheme] = useUrlParam(
 // ?t=invalid → "light" (warns in console)
 ```
 
-### Arrays
+### Arrays (delimiter-separated)
 ```typescript
 const [tags, setTags] = useUrlParam('tags', stringsParam([], ','))
 const [ids, setIds] = useUrlParam('ids', numberArrayParam([]))
 // ?tags=foo,bar,baz → ["foo", "bar", "baz"]
 // ?ids=1,2,3 → [1, 2, 3]
+```
+
+### Multi-value Arrays (repeated keys)
+```typescript
+import { useMultiUrlParam, multiStringParam } from '@rdub/use-url-params'
+
+const [tags, setTags] = useMultiUrlParam('tag', multiStringParam())
+// ?tag=foo&tag=bar&tag=baz → ["foo", "bar", "baz"]
 ```
 
 ## Custom Params
@@ -161,6 +171,20 @@ const parsed = parseParams(window.location.search)
 const zoom = boolParam.decode(parsed.z)  // true
 ```
 
+## Hash Params
+
+Use hash fragment (`#key=value`) instead of query string (`?key=value`):
+
+```typescript
+// Just change the import path
+import { useUrlParam, boolParam } from '@rdub/use-url-params/hash'
+
+const [zoom, setZoom] = useUrlParam('z', boolParam)
+// URL: https://example.com/#z (instead of ?z)
+```
+
+Same API, different URL location. Useful when query strings conflict with server routing or you want params to survive page reloads without server involvement.
+
 ## API Reference
 
 ### `useUrlParam<T>(key: string, param: Param<T>, push?: boolean)`
@@ -180,6 +204,15 @@ React hook for managing multiple URL parameters together.
 - `push`: Use pushState (true) or replaceState (false, default)
 - Returns: `{ values, setValues }`
 
+### `useMultiUrlParam<T>(key: string, param: MultiParam<T>, push?: boolean)`
+
+React hook for managing a multi-value URL parameter (repeated keys).
+
+- `key`: Query parameter key
+- `param`: MultiParam encoder/decoder
+- `push`: Use pushState (true) or replaceState (false, default)
+- Returns: `[value: T, setValue: (value: T) => void]`
+
 ### `Param<T>`
 
 Bidirectional encoder/decoder interface:
@@ -188,6 +221,17 @@ Bidirectional encoder/decoder interface:
 type Param<T> = {
   encode: (value: T) => string | undefined
   decode: (encoded: string | undefined) => T
+}
+```
+
+### `MultiParam<T>`
+
+Multi-value encoder/decoder interface:
+
+```typescript
+type MultiParam<T> = {
+  encode: (value: T) => string[]
+  decode: (encoded: string[]) => T
 }
 ```
 
