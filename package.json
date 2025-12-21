@@ -1,6 +1,6 @@
 {
   "name": "@rdub/use-url-params",
-  "version": "0.1.2-dist.246ed81",
+  "version": "0.1.2-dist.c669da0",
   "main": "./index.cjs",
   "module": "./index.js",
   "types": "./index.d.ts",

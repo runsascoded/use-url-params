@@ -125,6 +125,41 @@ type Pagination = {
     pageSize: number;
 };
 declare function paginationParam(defaultPageSize: number, validPageSizes?: readonly number[]): Param<Pagination>;
+/**
+ * Code mapping for enum values - maps full values to short codes for compact URLs.
+ * Can be specified as:
+ * - Array of [value, code] tuples: [['Rides', 'r'], ['Minutes', 'm']]
+ * - Object mapping values to codes: { Rides: 'r', Minutes: 'm' }
+ */
+type CodeMap<T extends string> = [T, string][] | Record<T, string>;
+/**
+ * Single-value enum parameter with short code mapping.
+ * Maps full enum values to abbreviated codes for compact URLs.
+ * Omitted from URL when equal to default.
+ *
+ * @example
+ * // ?y=r for "Rides", ?y=m for "Minutes", omitted for default "Rides"
+ * codeParam('Rides', [['Rides', 'r'], ['Minutes', 'm']])
+ * // or with object syntax:
+ * codeParam('Rides', { Rides: 'r', Minutes: 'm' })
+ */
+declare function codeParam<T extends string>(init: T, codeMap: CodeMap<T>): Param<T>;
+/**
+ * Multi-value parameter with short code mapping.
+ * Maps full values to abbreviated codes for compact URLs.
+ * Omitted from URL when all values are selected.
+ *
+ * @param allValues - Array of all possible values (used to detect "all selected")
+ * @param codeMap - Mapping from values to short codes
+ * @param separator - Delimiter between codes (default: '' for most compact URLs)
+ *
+ * @example
+ * // Regions: ?r=nj for NYC+JC, ?r=njh or omitted for all three
+ * codesParam(['NYC', 'JC', 'HOB'], [['NYC', 'n'], ['JC', 'j'], ['HOB', 'h']])
+ * // or with object syntax and custom separator:
+ * codesParam(['NYC', 'JC', 'HOB'], { NYC: 'n', JC: 'j', HOB: 'h' }, ',')
+ */
+declare function codesParam<T extends string>(allValues: readonly T[], codeMap: CodeMap<T>, separator?: string): Param<T[]>;
 
 /**
  * Multi-value parameter types for handling repeated URL params
@@ -303,4 +338,4 @@ declare function getCurrentParams(): Record<string, Encoded>;
  */
 declare function updateUrl(params: Record<string, Encoded>, push?: boolean): void;
 
-export { type Encoded, type LocationStrategy, type MultiEncoded, type MultiParam, type Pagination, type Param, boolParam, defStringParam, enumParam, floatParam, getCurrentParams, getDefaultStrategy, hashStrategy, intParam, multiFloatParam, multiIntParam, multiStringParam, numberArrayParam, optIntParam, paginationParam, parseMultiParams, parseParams, queryStrategy, serializeMultiParams, serializeParams, setDefaultStrategy, stringParam, stringsParam, updateUrl, useMultiUrlParam, useMultiUrlParams, useUrlParam, useUrlParams };
+export { type CodeMap, type Encoded, type LocationStrategy, type MultiEncoded, type MultiParam, type Pagination, type Param, boolParam, codeParam, codesParam, defStringParam, enumParam, floatParam, getCurrentParams, getDefaultStrategy, hashStrategy, intParam, multiFloatParam, multiIntParam, multiStringParam, numberArrayParam, optIntParam, paginationParam, parseMultiParams, parseParams, queryStrategy, serializeMultiParams, serializeParams, setDefaultStrategy, stringParam, stringsParam, updateUrl, useMultiUrlParam, useMultiUrlParams, useUrlParam, useUrlParams };

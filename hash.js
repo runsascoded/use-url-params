@@ -184,6 +184,44 @@ function paginationParam(defaultPageSize, validPageSizes) {
     }
   };
 }
+function normalizeCodeMap(codeMap) {
+  if (Array.isArray(codeMap)) return codeMap;
+  return Object.entries(codeMap);
+}
+function codeParam(init, codeMap) {
+  const entries = normalizeCodeMap(codeMap);
+  const valueToCode = new Map(entries);
+  const codeToValue = new Map(entries.map(([v, c]) => [c, v]));
+  return {
+    encode: (value) => {
+      if (value === init) return void 0;
+      return valueToCode.get(value) ?? value;
+    },
+    decode: (encoded) => {
+      if (encoded === void 0) return init;
+      return codeToValue.get(encoded) ?? init;
+    }
+  };
+}
+function codesParam(allValues, codeMap, separator = "") {
+  const entries = normalizeCodeMap(codeMap);
+  const valueToCode = new Map(entries);
+  const codeToValue = new Map(entries.map(([v, c]) => [c, v]));
+  return {
+    encode: (values) => {
+      if (values.length === allValues.length && allValues.every((v) => values.includes(v))) {
+        return void 0;
+      }
+      return values.map((v) => valueToCode.get(v) ?? v).join(separator);
+    },
+    decode: (encoded) => {
+      if (encoded === void 0) return [...allValues];
+      if (encoded === "") return [];
+      const codes = separator ? encoded.split(separator) : encoded.split("");
+      return codes.map((c) => codeToValue.get(c)).filter((v) => v !== void 0);
+    }
+  };
+}
 
 // src/multiParams.ts
 function multiStringParam(init = []) {
@@ -432,6 +470,6 @@ function updateUrl(params, push = false) {
 // src/hash.ts
 setDefaultStrategy(hashStrategy);
 
-export { boolParam, defStringParam, enumParam, floatParam, getCurrentParams, getDefaultStrategy, hashStrategy, intParam, multiFloatParam, multiIntParam, multiStringParam, numberArrayParam, optIntParam, paginationParam, parseMultiParams, parseParams, queryStrategy, serializeMultiParams, serializeParams, setDefaultStrategy, stringParam, stringsParam, updateUrl, useMultiUrlParam, useMultiUrlParams, useUrlParam, useUrlParams };
+export { boolParam, codeParam, codesParam, defStringParam, enumParam, floatParam, getCurrentParams, getDefaultStrategy, hashStrategy, intParam, multiFloatParam, multiIntParam, multiStringParam, numberArrayParam, optIntParam, paginationParam, parseMultiParams, parseParams, queryStrategy, serializeMultiParams, serializeParams, setDefaultStrategy, stringParam, stringsParam, updateUrl, useMultiUrlParam, useMultiUrlParams, useUrlParam, useUrlParams };
 //# sourceMappingURL=hash.js.map
 //# sourceMappingURL=hash.js.map
