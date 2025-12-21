@@ -90,10 +90,42 @@ const [ids, setIds] = useUrlParam('ids', numberArrayParam([]))
 
 ### Multi-value Arrays (repeated keys)
 ```typescript
-import { useMultiUrlParam, multiStringParam } from '@rdub/use-url-params'
+import { useMultiUrlParam, multiStringParam, multiIntParam } from '@rdub/use-url-params'
 
 const [tags, setTags] = useMultiUrlParam('tag', multiStringParam())
 // ?tag=foo&tag=bar&tag=baz → ["foo", "bar", "baz"]
+
+const [ids, setIds] = useMultiUrlParam('id', multiIntParam())
+// ?id=1&id=2&id=3 → [1, 2, 3]
+
+// Also available: multiFloatParam()
+```
+
+### Compact Code Mapping
+```typescript
+// Single value with short codes
+const [metric, setMetric] = useUrlParam('y', codeParam('Rides', {
+  Rides: 'r',
+  Minutes: 'm',
+}))
+// ?y=m → "Minutes", omitted for default "Rides"
+
+// Multi-value with short codes (omits when all selected)
+const [regions, setRegions] = useUrlParam('r', codesParam(
+  ['NYC', 'JC', 'HOB'],
+  { NYC: 'n', JC: 'j', HOB: 'h' }
+))
+// ?r=nj → ["NYC", "JC"], omitted when all three selected
+```
+
+### Pagination
+```typescript
+const [page, setPage] = useUrlParam('p', paginationParam(20))
+// Encodes offset + pageSize compactly using + as delimiter:
+// { offset: 0, pageSize: 20 } → (omitted)
+// { offset: 0, pageSize: 50 } → ?p=+50
+// { offset: 100, pageSize: 20 } → ?p=100
+// { offset: 100, pageSize: 50 } → ?p=100+50
 ```
 
 ## Custom Params
@@ -235,10 +267,37 @@ type MultiParam<T> = {
 }
 ```
 
+### Built-in Param Types
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `boolParam` | `Param<boolean>` | `?key` = true, absent = false |
+| `stringParam(init?)` | `Param<string \| undefined>` | Optional string |
+| `defStringParam(init)` | `Param<string>` | Required string with default |
+| `intParam(init)` | `Param<number>` | Integer with default |
+| `floatParam(init)` | `Param<number>` | Float with default |
+| `optIntParam` | `Param<number \| null>` | Optional integer |
+| `enumParam(init, values)` | `Param<T>` | Validated enum |
+| `stringsParam(init?, delim?)` | `Param<string[]>` | Delimiter-separated strings |
+| `numberArrayParam(init?)` | `Param<number[]>` | Comma-separated numbers |
+| `codeParam(init, codeMap)` | `Param<T>` | Enum with short URL codes |
+| `codesParam(allValues, codeMap, sep?)` | `Param<T[]>` | Multi-value with short codes |
+| `paginationParam(defaultSize, validSizes?)` | `Param<Pagination>` | Offset + page size |
+
+### Built-in MultiParam Types
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `multiStringParam(init?)` | `MultiParam<string[]>` | Repeated string params |
+| `multiIntParam(init?)` | `MultiParam<number[]>` | Repeated integer params |
+| `multiFloatParam(init?)` | `MultiParam<number[]>` | Repeated float params |
+
 ### Core Utilities
 
-- `serializeParams(params)`: Convert params object to URL query string
-- `parseParams(source)`: Parse URL string or URLSearchParams to object
+- `serializeParams(params)`: Convert params object to URL query string *(deprecated, use `serializeMultiParams`)*
+- `parseParams(source)`: Parse URL string or URLSearchParams to object *(deprecated, use `parseMultiParams`)*
+- `serializeMultiParams(params)`: Convert multi-value params to URL query string
+- `parseMultiParams(source)`: Parse URL to multi-value params object
 - `getCurrentParams()`: Get current URL params (browser only)
 - `updateUrl(params, push?)`: Update URL without reloading (browser only)
 
