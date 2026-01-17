@@ -1,6 +1,6 @@
 {
-  "name": "@rdub/use-url-params",
-  "version": "0.1.2",
+  "name": "use-params",
+  "version": "0.2.0",
   "description": "Type-safe URL query parameter management with minimal, human-readable encoding",
   "type": "module",
   "main": "./dist/index.cjs",
