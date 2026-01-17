@@ -1,8 +1,26 @@
 # use-prms
 
-Type-safe URL query parameter management with minimal, human-readable encoding.
+[![npm version](https://img.shields.io/npm/v/use-prms)](https://www.npmjs.com/package/use-prms)
+[![license](https://img.shields.io/npm/l/use-prms)](https://github.com/runsascoded/use-prms/blob/main/LICENSE)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/use-prms)](https://bundlephobia.com/package/use-prms)
 
-## Features
+Type-safe URL-parameter (query and hash) management with minimal, human-readable encoding and decoding.
+
+<!-- `toc` -->
+- [Features](#features)
+- [Installation](#install)
+- [Quick Start](#quick-start)
+- [Built-in Param Types](#param-types)
+- [Custom Params](#custom)
+- [Batch Updates](#batch)
+- [URL Encoding](#encoding)
+- [Framework-Agnostic Core](#core)
+- [Hash Params](#hash)
+- [API Reference](#api)
+- [Examples](#examples)
+- [License](#license)
+
+## Features <a id="features"></a>
 
 - 🎯 **Type-safe**: Full TypeScript support with generic `Param<T>` interface
 - 📦 **Tiny URLs**: Smart encoding - omit defaults, use short keys, `+` for spaces
@@ -13,15 +31,17 @@ Type-safe URL query parameter management with minimal, human-readable encoding.
 - 🔁 **Multi-value params**: Support for repeated keys like `?tag=a&tag=b`
 - #️⃣ **Hash params**: Use hash fragment (`#key=value`) instead of query string
 
-## Installation
+## Installation <a id="install"></a>
 
 ```bash
 npm install use-prms
-# or
+```
+Or:
+```bash
 pnpm add use-prms
 ```
 
-## Quick Start
+## Quick Start <a id="quick-start"></a>
 
 ```typescript
 import { useUrlParam, boolParam, stringParam, intParam } from 'use-prms'
@@ -44,7 +64,7 @@ function MyComponent() {
 }
 ```
 
-## Built-in Param Types
+## Built-in Param Types <a id="param-types"></a>
 
 ### Boolean
 ```typescript
@@ -128,7 +148,7 @@ const [page, setPage] = useUrlParam('p', paginationParam(20))
 // { offset: 100, pageSize: 50 } → ?p=100+50
 ```
 
-## Custom Params
+## Custom Params <a id="custom"></a>
 
 Create your own param encoders/decoders:
 
@@ -156,7 +176,7 @@ const [date, setDate] = useUrlParam('d', dateParam)
 // ?d=251123 → Date(2025, 10, 23)
 ```
 
-## Batch Updates
+## Batch Updates <a id="batch"></a>
 
 Use `useUrlParams()` to update multiple parameters atomically:
 
@@ -173,7 +193,7 @@ const { values, setValues } = useUrlParams({
 setValues({ page: 2, size: 50 })
 ```
 
-## URL Encoding
+## URL Encoding <a id="encoding"></a>
 
 - **Spaces**: Encoded as `+` (standard form-urlencoded)
 - **Defaults**: Omitted from URL (keeps URLs minimal)
@@ -187,23 +207,23 @@ setDevices(['gym', 'bedroom'])
 // URL: ?d=gym+bedroom
 ```
 
-## Framework-Agnostic Core
+## Framework-Agnostic Core <a id="core"></a>
 
 Use the core utilities without React:
 
 ```typescript
-import { boolParam, serializeParams, parseParams } from 'use-prms'
+import { boolParam, serializeMultiParams, parseMultiParams } from 'use-prms'
 
 // Encode
-const params = { z: boolParam.encode(true), d: 'gym' }
-const search = serializeParams(params)  // "z&d=gym"
+const params = { z: [boolParam.encode(true) ?? ''], d: ['gym'] }
+const search = serializeMultiParams(params)  // "z&d=gym"
 
 // Decode
-const parsed = parseParams(window.location.search)
-const zoom = boolParam.decode(parsed.z)  // true
+const parsed = parseMultiParams(window.location.search)
+const zoom = boolParam.decode(parsed.z?.[0])  // true
 ```
 
-## Hash Params
+## Hash Params <a id="hash"></a>
 
 Use hash fragment (`#key=value`) instead of query string (`?key=value`):
 
@@ -217,7 +237,7 @@ const [zoom, setZoom] = useUrlParam('z', boolParam)
 
 Same API, different URL location. Useful when query strings conflict with server routing or you want params to survive page reloads without server involvement.
 
-## API Reference
+## API Reference <a id="api"></a>
 
 ### `useUrlParam<T>(key: string, param: Param<T>, push?: boolean)`
 
@@ -301,20 +321,34 @@ type MultiParam<T> = {
 - `getCurrentParams()`: Get current URL params (browser only)
 - `updateUrl(params, push?)`: Update URL without reloading (browser only)
 
-## Examples
+## Examples <a id="examples"></a>
 
 Projects using `use-prms`:
 
-- [runsascoded/awair] – Air quality dashboard with URL-persisted chart settings
+- **[awair.runsascoded.com]** – Air quality dashboard ([GitHub][awair-gh], [usage][awair-search])
 
-  Example: [`awair.runsascoded.com/?d=+br&y=thZ&t=-3d`][awair-example]
-  - `d=+br`: show default device + "bedroom" (`+` encodes space, leading space means "include default")
-  - `y=thZ`: left axis = temp (`t`), right axis = humidity (`h`), Y-axes don't start from zero (`Z`)
-  - `t=-3d`: time range = last 3 days
+  Example: [`?d=+br&y=thZ&t=-3d`][awair-example]
+  - `d=+br`: devices (leading space = "include default")
+  - `y=thZ`: Y-axes config
+  - `t=-3d`: time range
 
-[runsascoded/awair]: https://github.com/runsascoded/awair
+- **[ctbk.dev]** – Citi Bike trip data explorer ([GitHub][ctbk-gh], [usage][ctbk-search])
+
+- **[kbd.rbw.sh]** – Keyboard shortcut manager demo site ([GitHub][use-kbd-gh], [usage][use-kbd-search])
+
+[awair.runsascoded.com]: https://awair.runsascoded.com
+[awair-gh]: https://github.com/runsascoded/awair
+[awair-search]: https://github.com/search?q=repo%3Arunsascoded%2Fawair+use-prms&type=code
 [awair-example]: https://awair.runsascoded.com/?d=+br&y=thZ&t=-3d
 
-## License
+[ctbk.dev]: https://ctbk.dev
+[ctbk-gh]: https://github.com/hudcostreets/ctbk.dev
+[ctbk-search]: https://github.com/search?q=repo%3Ahudcostreets%2Fctbk.dev+use-prms&type=code
+
+[kbd.rbw.sh]: https://kbd.rbw.sh
+[use-kbd-gh]: https://github.com/runsascoded/use-kbd
+[use-kbd-search]: https://github.com/search?q=repo%3Arunsascoded%2Fuse-kbd+use-prms&type=code
+
+## License <a id="license"></a>
 
 MIT
