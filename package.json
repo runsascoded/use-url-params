@@ -1,6 +1,6 @@
 {
   "name": "use-prms",
-  "version": "0.2.0-dist.c9e8176",
+  "version": "0.2.0-dist.5630374",
   "main": "./index.cjs",
   "module": "./index.js",
   "types": "./index.d.ts",
