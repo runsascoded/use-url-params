@@ -34,8 +34,8 @@ export function Home() {
   const [multiTags, setMultiTags] = useMultiUrlParam('tag', multiStringParam())
   const [multiIds, setMultiIds] = useMultiUrlParam('id', multiIntParam())
   const { values: batch, setValues: setBatch } = useUrlParams({
-    x: intParam(0),
-    y: intParam(0),
+    bx: intParam(0),
+    by: intParam(0),
   })
 
   return (

@@ -1,9 +1,78 @@
 import { useState, useMemo } from 'react'
-import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useLocation, Link } from 'react-router-dom'
+import { FaGithub, FaTimes } from 'react-icons/fa'
+import Tooltip from '@mui/material/Tooltip'
+import { clearParams } from 'use-prms'
 
 const themes = ['light', 'dark', 'auto'] as const
 export type Theme = typeof themes[number]
 export { themes }
+
+// Color palette for param sections (soft pastels that work in light/dark)
+const paramColors = [
+  'rgba(99, 102, 241, 0.15)',   // indigo
+  'rgba(236, 72, 153, 0.15)',   // pink
+  'rgba(34, 197, 94, 0.15)',    // green
+  'rgba(249, 115, 22, 0.15)',   // orange
+  'rgba(14, 165, 233, 0.15)',   // sky
+  'rgba(168, 85, 247, 0.15)',   // purple
+  'rgba(234, 179, 8, 0.15)',    // yellow
+  'rgba(20, 184, 166, 0.15)',   // teal
+  'rgba(239, 68, 68, 0.15)',    // red
+  'rgba(107, 114, 128, 0.15)',  // gray
+] as const
+
+// Stronger versions for hover
+const paramColorsStrong = [
+  'rgba(99, 102, 241, 0.35)',
+  'rgba(236, 72, 153, 0.35)',
+  'rgba(34, 197, 94, 0.35)',
+  'rgba(249, 115, 22, 0.35)',
+  'rgba(14, 165, 233, 0.35)',
+  'rgba(168, 85, 247, 0.35)',
+  'rgba(234, 179, 8, 0.35)',
+  'rgba(20, 184, 166, 0.35)',
+  'rgba(239, 68, 68, 0.35)',
+  'rgba(107, 114, 128, 0.35)',
+] as const
+
+// Map param keys to color indices (params in same section share color)
+const paramKeyColors: Record<string, number> = {
+  e: 0,      // enabled (boolean)
+  n: 1,      // name (string)
+  c: 2,      // count (int) - Numbers section
+  r: 2,      // ratio (float) - Numbers section (same color as c)
+  t: 3,      // theme (enum)
+  tags: 4,   // tags (strings array)
+  p: 5,      // pagination
+  y: 6,      // metric (code) - Code Mapping section
+  rg: 6,     // regions (codes) - Code Mapping section (same color as y)
+  tag: 7,    // multi tags - Multi-Value section
+  id: 7,     // multi ids - Multi-Value section (same color as tag)
+  bx: 8,     // batch x - Batch Updates section
+  by: 8,     // batch y - Batch Updates section
+}
+
+// Keys that should highlight together (same section)
+const keyGroups: string[][] = [
+  ['c', 'r'],      // Numbers section
+  ['y', 'rg'],     // Code Mapping section
+  ['tag', 'id'],   // Multi-Value section
+  ['bx', 'by'],    // Batch section
+]
+
+// Expand a set of active keys to include all keys in the same group
+function expandKeyGroups(keys: string[]): string[] {
+  const expanded = new Set(keys)
+  for (const key of keys) {
+    for (const group of keyGroups) {
+      if (group.includes(key)) {
+        group.forEach(k => expanded.add(k))
+      }
+    }
+  }
+  return Array.from(expanded)
+}
 
 const metrics = { Rides: 'r', Minutes: 'm', Distance: 'd' } as const
 export type Metric = keyof typeof metrics
@@ -14,7 +83,19 @@ export type Region = typeof regions[number]
 const regionCodes = { NYC: 'n', JC: 'j', HOB: 'h' } as const
 export { regions, regionCodes }
 
-function UrlDisplay({ search, activeKeys, onReset, mode }: { search: string; activeKeys: string[]; onReset: () => void; mode: 'query' | 'hash' }) {
+function UrlDisplay({
+  search,
+  activeKeys,
+  onReset,
+  mode,
+  onHoverKey,
+}: {
+  search: string
+  activeKeys: string[]
+  onReset: () => void
+  mode: 'query' | 'hash'
+  onHoverKey: (keys: string[] | null) => void
+}) {
   const segments = useMemo(() => {
     if (!search) return []
     const params = search.slice(1).split('&')
@@ -22,7 +103,8 @@ function UrlDisplay({ search, activeKeys, onReset, mode }: { search: string; act
     return params.map((param, i) => {
       const key = param.split('=')[0]
       const prefix = i === 0 ? firstPrefix : '&'
-      return { key, text: prefix + param }
+      const colorIdx = paramKeyColors[key] ?? 0
+      return { key, text: prefix + param, colorIdx }
     })
   }, [search, mode])
 
@@ -30,19 +112,31 @@ function UrlDisplay({ search, activeKeys, onReset, mode }: { search: string; act
     <div className="url-bar">
       <div className="url-bar-header">
         <span className="url-bar-label">Preview</span>
-        {search && (
-          <button className="url-reset" onClick={onReset} title="Reset all params">
-            ×
-          </button>
-        )}
       </div>
       <div className="url-display">
-        /
-        {segments.map((seg, i) => (
-          <span key={i} className={activeKeys.includes(seg.key) ? 'highlight' : ''}>
-            {seg.text}
-          </span>
-        ))}
+        <span className="url-text">
+          /
+          {segments.map((seg, i) => {
+            const isActive = activeKeys.includes(seg.key)
+            const bgColor = isActive ? paramColorsStrong[seg.colorIdx] : paramColors[seg.colorIdx]
+            return (
+              <span
+                key={i}
+                className={isActive ? 'highlight' : ''}
+                style={{ backgroundColor: bgColor, borderRadius: '3px', padding: '0 2px' }}
+                onMouseEnter={() => onHoverKey([seg.key])}
+                onMouseLeave={() => onHoverKey(null)}
+              >
+                {seg.text}
+              </span>
+            )
+          })}
+        </span>
+        {search && (
+          <button className="url-reset" onClick={onReset} title="Reset all params">
+            <FaTimes size={16} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -71,8 +165,8 @@ export interface ParamValues {
   setMultiTags: (v: string[]) => void
   multiIds: number[]
   setMultiIds: (v: number[]) => void
-  batch: { x: number; y: number }
-  setBatch: (v: Partial<{ x: number; y: number }>) => void
+  batch: { bx: number; by: number }
+  setBatch: (v: Partial<{ bx: number; by: number }>) => void
 }
 
 interface ParamsDemoProps extends ParamValues {
@@ -95,8 +189,11 @@ export function ParamsDemo({
   batch, setBatch,
 }: ParamsDemoProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   const [activeKeys, setActiveKeys] = useState<string[]>([])
+  const [urlHoverKeys, setUrlHoverKeys] = useState<string[] | null>(null)
+
+  // Combined active keys from section hover and URL hover, expanded to include grouped keys
+  const combinedActiveKeys = expandKeyGroups(urlHoverKeys ?? activeKeys)
 
   const activate = (...keys: string[]) => () => setActiveKeys(keys)
   const deactivate = () => setActiveKeys([])
@@ -111,7 +208,16 @@ export function ParamsDemo({
     : { pathname: altPath, search: params ? `?${params}` : '' }
 
   const handleReset = () => {
-    navigate(location.pathname, { replace: true })
+    clearParams(mode)
+  }
+
+  // Get background color for a section based on its param keys
+  const getSectionStyle = (keys: string[]) => {
+    const isActive = keys.some(k => combinedActiveKeys.includes(k))
+    const colorIdx = paramKeyColors[keys[0]] ?? 0
+    return {
+      backgroundColor: isActive ? paramColorsStrong[colorIdx] : paramColors[colorIdx],
+    }
   }
 
   const toggleTag = (tag: string) => {
@@ -140,20 +246,69 @@ export function ParamsDemo({
 
   return (
     <>
-      <h1>use-prms</h1>
-      <p className="subtitle">
-        Type-safe URL parameter management with minimal encoding.
+      <h1>
+        use-prms
+        {' '}<a href="https://github.com/runsascoded/use-prms" className="title-github" title="GitHub" target="_blank">
+          <FaGithub size={24} />
+        </a>
+      </h1>
+      <p className="badges">
+        <a href="https://www.npmjs.com/package/use-prms" target="_blank"><img src="https://img.shields.io/npm/v/use-prms" alt="npm version" /></a>
+        {' '}<a href="https://www.npmjs.com/package/use-prms" target="_blank"><img src="https://img.shields.io/npm/l/use-prms" alt="license" /></a>
+        {' '}<a href="https://bundlephobia.com/package/use-prms" target="_blank"><img src="https://img.shields.io/bundlephobia/minzip/use-prms" alt="bundle size" /></a>
       </p>
+      <p className="subtitle">
+        Type-safe URL-parameter management hooks.
+      </p>
+      <div className="examples">
+        <h2>Live examples</h2>
+        <ul>
+          <li>
+            <a href="https://awair.runsascoded.com" target="_blank">awair.runsascoded.com</a>
+            {' '}(e.g. <a href="https://awair.runsascoded.com/?d=+br&y=thZ&t=-3d" className="example-url" target="_blank">?d=+br&y=thZ&t=-3d</a>)
+            {' '}<Tooltip title="View use-prms usage on GitHub" arrow><a href="https://github.com/search?q=repo%3Arunsascoded%2Fawair+use-prms&type=code" className="example-gh" target="_blank"><FaGithub size={18} /></a></Tooltip>
+          </li>
+          <li>
+            <a href="https://ctbk.dev" target="_blank">ctbk.dev</a>
+            {' '}(e.g. <a href="https://ctbk.dev/?y=m&s=b&rt=ce&d=2002-&pct" className="example-url" target="_blank">?y=m&s=b&rt=ce&d=2002-&pct</a>)
+            {' '}<Tooltip title="View use-prms usage on GitHub" arrow><a href="https://github.com/search?q=repo%3Ahudcostreets%2Fctbk.dev+use-prms&type=code" className="example-gh" target="_blank"><FaGithub size={18} /></a></Tooltip>
+          </li>
+          <li>
+            <a href="https://kbd.rbw.sh" target="_blank">kbd.rbw.sh</a>
+            {' '}(e.g. <a href="https://kbd.rbw.sh/?t=dark" className="example-url" target="_blank">?t=dark</a>)
+            {' '}<Tooltip title="View use-prms usage on GitHub" arrow><a href="https://github.com/search?q=repo%3Arunsascoded%2Fuse-kbd+use-prms&type=code" className="example-gh" target="_blank"><FaGithub size={18} /></a></Tooltip>
+          </li>
+        </ul>
+      </div>
+      <h2>Demo</h2>
       <p className="intro">
         Interact with the controls below to see how values are encoded in the URL.
         {mode === 'query' ? ' Parameters appear in the query string (?key=value).' : ' Parameters appear in the hash fragment (#key=value).'}
-        {' '}<Link to={altLink}>Try {mode === 'query' ? 'hash' : 'query'} params instead.</Link>
+        {' '}<Link to={altLink}>{mode === 'query' ? 'Hash' : 'Query'} params are also supported.</Link>
       </p>
+      <div className="examples">
+        <h3>Examples:</h3>
+        <ul>
+          {mode === 'query' ? (
+            <>
+              <li><span className="try-label">Basics</span> <Link to="/?e&c=5&r=1.5" className="example-url">?e&c=5&r=1.5</Link></li>
+              <li><span className="try-label">Text</span> <Link to="/?n=hello+world&tags=react+vue" className="example-url">?n=hello+world&tags=react+vue</Link></li>
+              <li><span className="try-label">Full</span> <Link to="/?e&t=auto&p=40+50&y=m&rg=nj" className="example-url">?e&t=auto&p=40+50&y=m&rg=nj</Link></li>
+            </>
+          ) : (
+            <>
+              <li><span className="try-label">Basics</span> <Link to="/hash#e&c=5&r=1.5" className="example-url">#e&c=5&r=1.5</Link></li>
+              <li><span className="try-label">Text</span> <Link to="/hash#n=hello+world&tags=react+vue" className="example-url">#n=hello+world&tags=react+vue</Link></li>
+              <li><span className="try-label">Full</span> <Link to="/hash#e&t=auto&p=40+50&y=m&rg=nj" className="example-url">#e&t=auto&p=40+50&y=m&rg=nj</Link></li>
+            </>
+          )}
+        </ul>
+      </div>
 
-      <UrlDisplay search={search} activeKeys={activeKeys} onReset={handleReset} mode={mode} />
+      <UrlDisplay search={search} activeKeys={combinedActiveKeys} onReset={handleReset} mode={mode} onHoverKey={setUrlHoverKeys} />
 
       {/* Boolean */}
-      <section className="section" onMouseEnter={activate('e')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['e'])} onMouseEnter={activate('e')} onMouseLeave={deactivate}>
         <h2>Boolean (boolParam)</h2>
         <div className="controls">
           <button
@@ -165,10 +320,14 @@ export function ParamsDemo({
             {enabled ? 'Enabled' : 'Disabled'}
           </button>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`const [enabled, setEnabled] = useUrlParam('e', boolParam)`}</pre>
+        </details>
       </section>
 
       {/* String */}
-      <section className="section" onMouseEnter={activate('n')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['n'])} onMouseEnter={activate('n')} onMouseLeave={deactivate}>
         <h2>String (stringParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -183,10 +342,14 @@ export function ParamsDemo({
             />
           </div>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`const [name, setName] = useUrlParam('n', stringParam())`}</pre>
+        </details>
       </section>
 
       {/* Numbers */}
-      <section className="section" onMouseEnter={activate('c', 'r')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['c', 'r'])} onMouseEnter={activate('c', 'r')} onMouseLeave={deactivate}>
         <h2>Numbers (intParam, floatParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -211,10 +374,15 @@ export function ParamsDemo({
             />
           </div>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`const [count, setCount] = useUrlParam('c', intParam(0))
+const [ratio, setRatio] = useUrlParam('r', floatParam(1.0))`}</pre>
+        </details>
       </section>
 
       {/* Enum */}
-      <section className="section" onMouseEnter={activate('t')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['t'])} onMouseEnter={activate('t')} onMouseLeave={deactivate}>
         <h2>Enum (enumParam)</h2>
         <div className="controls">
           {themes.map(t => (
@@ -229,10 +397,17 @@ export function ParamsDemo({
             </button>
           ))}
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`const themes = ['light', 'dark', 'auto'] as const
+type Theme = typeof themes[number]
+
+const [theme, setTheme] = useUrlParam('t', enumParam<Theme>('light', themes))`}</pre>
+        </details>
       </section>
 
       {/* Strings Array */}
-      <section className="section" onMouseEnter={activate('tags')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['tags'])} onMouseEnter={activate('tags')} onMouseLeave={deactivate}>
         <h2>String Array (stringsParam)</h2>
         <div className="controls">
           <div className="tag-list">
@@ -247,10 +422,15 @@ export function ParamsDemo({
             ))}
           </div>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`// Space-separated in URL: ?tags=react+vue
+const [tags, setTags] = useUrlParam('tags', stringsParam([], ' '))`}</pre>
+        </details>
       </section>
 
       {/* Pagination */}
-      <section className="section" onMouseEnter={activate('p')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['p'])} onMouseEnter={activate('p')} onMouseLeave={deactivate}>
         <h2>Pagination (paginationParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -285,10 +465,15 @@ export function ParamsDemo({
             Next Page
           </button>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`// Encodes as offset+pageSize: ?p=40+50
+const [page, setPage] = useUrlParam('p', paginationParam({ offset: 0, pageSize: 10 }))`}</pre>
+        </details>
       </section>
 
       {/* Code Params */}
-      <section className="section" onMouseEnter={activate('y', 'rg')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['y', 'rg'])} onMouseEnter={activate('y', 'rg')} onMouseLeave={deactivate}>
         <h2>Code Mapping (codeParam, codesParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -322,10 +507,20 @@ export function ParamsDemo({
             </div>
           </div>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`// Map display values to short codes: Rides↔r, Minutes↔m, Distance↔d
+const metrics = { Rides: 'r', Minutes: 'm', Distance: 'd' } as const
+const [metric, setMetric] = useUrlParam('y', codeParam<Metric>('Rides', metrics))
+
+// Multi-select codes: ?rg=nj (NYC + JC)
+const regionCodes = { NYC: 'n', JC: 'j', HOB: 'h' } as const
+const [regions, setRegions] = useUrlParam('rg', codesParam<Region>([], regionCodes))`}</pre>
+        </details>
       </section>
 
       {/* Multi-value params */}
-      <section className="section" onMouseEnter={activate('tag', 'id')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['tag', 'id'])} onMouseEnter={activate('tag', 'id')} onMouseLeave={deactivate}>
         <h2>Multi-Value (useMultiUrlParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -365,19 +560,25 @@ export function ParamsDemo({
             </div>
           </div>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`// Repeated keys: ?tag=alpha&tag=beta&id=1&id=2
+const [tags, setTags] = useMultiUrlParam('tag', multiStringParam([]))
+const [ids, setIds] = useMultiUrlParam('id', multiIntParam([]))`}</pre>
+        </details>
       </section>
 
       {/* Batch Updates */}
-      <section className="section" onMouseEnter={activate('x', 'y')} onMouseLeave={deactivate}>
+      <section className="section" style={getSectionStyle(['bx', 'by'])} onMouseEnter={activate('bx', 'by')} onMouseLeave={deactivate}>
         <h2>Batch Updates (useUrlParams)</h2>
         <div className="controls">
           <div className="control-group">
             <label>X</label>
             <input
               type="number"
-              value={batch.x}
-              onChange={e => setBatch({ x: parseInt(e.target.value) || 0 })}
-              onFocus={activate('x')}
+              value={batch.bx}
+              onChange={e => setBatch({ bx: parseInt(e.target.value) || 0 })}
+              onFocus={activate('bx')}
               onBlur={deactivate}
             />
           </div>
@@ -385,27 +586,37 @@ export function ParamsDemo({
             <label>Y</label>
             <input
               type="number"
-              value={batch.y}
-              onChange={e => setBatch({ y: parseInt(e.target.value) || 0 })}
-              onFocus={activate('y')}
+              value={batch.by}
+              onChange={e => setBatch({ by: parseInt(e.target.value) || 0 })}
+              onFocus={activate('by')}
               onBlur={deactivate}
             />
           </div>
           <button
-            onClick={() => setBatch({ x: 100, y: 200 })}
-            onFocus={activate('x', 'y')}
+            onClick={() => setBatch({ bx: 100, by: 200 })}
+            onFocus={activate('bx', 'by')}
             onBlur={deactivate}
           >
             Set (100, 200)
           </button>
           <button
-            onClick={() => setBatch({ x: 0, y: 0 })}
-            onFocus={activate('x', 'y')}
+            onClick={() => setBatch({ bx: 0, by: 0 })}
+            onFocus={activate('bx', 'by')}
             onBlur={deactivate}
           >
             Reset
           </button>
         </div>
+        <details className="code-sample">
+          <summary>Code</summary>
+          <pre>{`// Update multiple params in one history entry
+const { values, setValues } = useUrlParams({
+  bx: intParam(0),
+  by: intParam(0),
+})
+// values.bx, values.by
+// setValues({ bx: 100, by: 200 }) - updates both atomically`}</pre>
+        </details>
       </section>
     </>
   )
