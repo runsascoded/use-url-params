@@ -2,11 +2,57 @@
  * React hooks for managing URL parameters
  */
 
-import { useCallback, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Param } from './index.js'
 import type { LocationStrategy, MultiEncoded } from './core.js'
-import { getDefaultStrategy, serializeMultiParams } from './core.js'
+import { getDefaultStrategy } from './core.js'
 import type { MultiParam } from './multiParams.js'
+
+/**
+ * Options for useUrlParam hook
+ */
+export interface UseUrlParamOptions {
+  /**
+   * Debounce URL writes in milliseconds.
+   * State updates immediately, but URL updates are debounced.
+   * Useful for high-frequency updates (dragging, animation, typing).
+   * @default 0 (no debounce)
+   */
+  debounce?: number
+
+  /**
+   * Use pushState (true) or replaceState (false) when updating URL.
+   * @default false (replaceState)
+   */
+  push?: boolean
+}
+
+/**
+ * Simple debounce implementation with cancel support
+ */
+function debounce<T extends (...args: any[]) => void>(
+  fn: T,
+  ms: number
+): T & { cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  const debounced = ((...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => {
+      timeoutId = null
+      fn(...args)
+    }, ms)
+  }) as T & { cancel: () => void }
+
+  debounced.cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = null
+    }
+  }
+
+  return debounced
+}
 
 /**
  * Cached snapshot to prevent infinite loops in useSyncExternalStore
@@ -60,27 +106,48 @@ function multiToSingle(multi: MultiEncoded): string | undefined {
 /**
  * React hook for managing a single URL query parameter.
  *
+ * Features:
+ * - Bidirectional sync: state ↔ URL
+ * - Causality tracking: prevents feedback loops and lossy re-decoding
+ * - Optional debounce for high-frequency updates
+ *
  * @param key - Query parameter key
  * @param param - Param encoder/decoder
- * @param push - Use pushState (true) or replaceState (false) when updating
+ * @param options - Options (debounce, push)
  * @returns Tuple of [value, setValue]
  *
  * @example
  * ```tsx
+ * // Basic usage
  * const [zoom, setZoom] = useUrlParam('z', boolParam)
- * const [device, setDevice] = useUrlParam('d', stringParam('default'))
+ *
+ * // With debounce for high-frequency updates
+ * const [position, setPosition] = useUrlParam('pos', floatParam(0), { debounce: 300 })
  * ```
  */
 export function useUrlParam<T>(
   key: string,
   param: Param<T>,
-  push = false
+  options: UseUrlParamOptions | boolean = {}
 ): [T, (value: T) => void] {
+  // Handle legacy boolean `push` argument for backwards compatibility
+  const opts: UseUrlParamOptions = typeof options === 'boolean'
+    ? { push: options }
+    : options
+  const { debounce: debounceMs = 0, push = false } = opts
+
   const strategy = getDefaultStrategy()
 
   // Use ref to avoid recreating setValue when param changes
   const paramRef = useRef(param)
   paramRef.current = param
+
+  // Causality tracking: track what we last wrote to avoid re-decoding our own writes
+  // This prevents feedback loops and lossy snap-back with imprecise encodings
+  const lastWrittenRef = useRef<{
+    encoded: string | undefined
+    decoded: T
+  } | null>(null)
 
   // Subscribe to URL changes
   const urlParams = useSyncExternalStore(
@@ -89,30 +156,40 @@ export function useUrlParam<T>(
     getServerSnapshot
   )
 
-  // Memoize decoded value based on encoded string AND param identity
-  // Re-decode if either the URL param string changes OR the param object changes
-  // (e.g., deviceIdsParam depends on devices array which loads asynchronously)
+  // Get encoded value from URL
   const encoded = multiToSingle(urlParams[key] ?? [])
+
+  // Decode value with causality tracking
+  // If encoded matches what we last wrote, use our authoritative decoded value
+  // This avoids re-decoding (wasteful) and lossy snap-back (buggy)
   const cacheRef = useRef<{ encoded: typeof encoded; param: Param<T>; decoded: T } | null>(null)
 
-  if (cacheRef.current === null || cacheRef.current.encoded !== encoded || cacheRef.current.param !== param) {
-    cacheRef.current = { encoded, param, decoded: param.decode(encoded) }
+  let value: T
+  if (lastWrittenRef.current && lastWrittenRef.current.encoded === encoded) {
+    // We caused this URL change - use our authoritative value
+    value = lastWrittenRef.current.decoded
+  } else {
+    // External change or initial load - decode from URL
+    if (cacheRef.current === null || cacheRef.current.encoded !== encoded || cacheRef.current.param !== param) {
+      cacheRef.current = { encoded, param, decoded: param.decode(encoded) }
+    }
+    value = cacheRef.current.decoded
+    // Clear lastWritten since URL now has external value
+    lastWrittenRef.current = null
   }
-  const value = cacheRef.current.decoded
 
-  // Update URL when value changes
-  const setValue = useCallback(
-    (newValue: T) => {
+  // Create the URL write function
+  const writeToUrl = useCallback(
+    (newValue: T, newEncoded: string | undefined) => {
       if (typeof window === 'undefined') return
 
       const currentParams = strategy.parse()
-      const encoded = paramRef.current.encode(newValue)
 
       // Update this parameter (single → multi)
-      if (encoded === undefined) {
+      if (newEncoded === undefined) {
         delete currentParams[key]
       } else {
-        currentParams[key] = [encoded]
+        currentParams[key] = [newEncoded]
       }
 
       // Build and update URL
@@ -128,6 +205,39 @@ export function useUrlParam<T>(
     [key, push, strategy]
   )
 
+  // Create debounced write if needed
+  const debouncedWriteRef = useRef<ReturnType<typeof debounce<typeof writeToUrl>> | null>(null)
+
+  // Setup/teardown debounced function when debounceMs changes
+  useEffect(() => {
+    if (debounceMs > 0) {
+      debouncedWriteRef.current = debounce(writeToUrl, debounceMs)
+    } else {
+      debouncedWriteRef.current = null
+    }
+    return () => {
+      debouncedWriteRef.current?.cancel()
+    }
+  }, [debounceMs, writeToUrl])
+
+  // Exposed setter: update causality tracking + write to URL (possibly debounced)
+  const setValue = useCallback(
+    (newValue: T) => {
+      const newEncoded = paramRef.current.encode(newValue)
+
+      // Track what we're writing for causality
+      lastWrittenRef.current = { encoded: newEncoded, decoded: newValue }
+
+      // Write to URL (debounced if configured)
+      if (debouncedWriteRef.current) {
+        debouncedWriteRef.current(newValue, newEncoded)
+      } else {
+        writeToUrl(newValue, newEncoded)
+      }
+    },
+    [writeToUrl]
+  )
+
   return [value, setValue]
 }
 
@@ -135,8 +245,13 @@ export function useUrlParam<T>(
  * React hook for managing multiple URL query parameters together.
  * Updates are batched into a single history entry.
  *
+ * Features:
+ * - Bidirectional sync: state ↔ URL
+ * - Causality tracking: prevents feedback loops and lossy re-decoding
+ * - Optional debounce for high-frequency updates
+ *
  * @param params - Object mapping keys to Param types
- * @param push - Use pushState (true) or replaceState (false) when updating
+ * @param options - Options (debounce, push)
  * @returns Object with decoded values and update function
  *
  * @example
@@ -153,12 +268,21 @@ export function useUrlParam<T>(
  */
 export function useUrlParams<P extends Record<string, Param<any>>>(
   params: P,
-  push = false
+  options: UseUrlParamOptions | boolean = {}
 ): {
   values: { [K in keyof P]: P[K] extends Param<infer T> ? T : never }
   setValues: (updates: Partial<{ [K in keyof P]: P[K] extends Param<infer T> ? T : never }>) => void
 } {
+  // Handle legacy boolean `push` argument for backwards compatibility
+  const opts: UseUrlParamOptions = typeof options === 'boolean'
+    ? { push: options }
+    : options
+  const { debounce: debounceMs = 0, push = false } = opts
+
   const strategy = getDefaultStrategy()
+
+  // Causality tracking: track what we last wrote per key
+  const lastWrittenRef = useRef<Record<string, { encoded: string | undefined; decoded: any }>>({})
 
   // Subscribe to URL changes
   const urlParams = useSyncExternalStore(
@@ -167,27 +291,34 @@ export function useUrlParams<P extends Record<string, Param<any>>>(
     getServerSnapshot
   )
 
-  // Decode all values from URL
+  // Decode all values from URL with causality tracking
   const values = Object.fromEntries(
-    Object.entries(params).map(([key, param]) => [
-      key,
-      param.decode(multiToSingle(urlParams[key] ?? []))
-    ])
+    Object.entries(params).map(([key, param]) => {
+      const encoded = multiToSingle(urlParams[key] ?? [])
+      const lastWritten = lastWrittenRef.current[key]
+
+      if (lastWritten && lastWritten.encoded === encoded) {
+        // We caused this URL change - use our authoritative value
+        return [key, lastWritten.decoded]
+      } else {
+        // External change or initial load - decode from URL
+        const decoded = param.decode(encoded)
+        // Clear lastWritten for this key since URL now has external value
+        delete lastWrittenRef.current[key]
+        return [key, decoded]
+      }
+    })
   ) as { [K in keyof P]: P[K] extends Param<infer T> ? T : never }
 
-  // Update multiple parameters at once
-  const setValues = useCallback(
-    (updates: Partial<{ [K in keyof P]: P[K] extends Param<infer T> ? T : never }>) => {
+  // Create the URL write function
+  const writeToUrl = useCallback(
+    (updates: Record<string, { encoded: string | undefined; decoded: any }>) => {
       if (typeof window === 'undefined') return
 
       const currentParams = strategy.parse()
 
       // Apply all updates
-      for (const [key, value] of Object.entries(updates)) {
-        const param = params[key]
-        if (!param) continue
-
-        const encoded = param.encode(value)
+      for (const [key, { encoded }] of Object.entries(updates)) {
         if (encoded === undefined) {
           delete currentParams[key]
         } else {
@@ -205,7 +336,46 @@ export function useUrlParams<P extends Record<string, Param<any>>>(
       // Trigger events to notify other hooks
       window.dispatchEvent(new PopStateEvent('popstate'))
     },
-    [params, push, strategy]
+    [push, strategy]
+  )
+
+  // Create debounced write if needed
+  const debouncedWriteRef = useRef<ReturnType<typeof debounce<typeof writeToUrl>> | null>(null)
+
+  useEffect(() => {
+    if (debounceMs > 0) {
+      debouncedWriteRef.current = debounce(writeToUrl, debounceMs)
+    } else {
+      debouncedWriteRef.current = null
+    }
+    return () => {
+      debouncedWriteRef.current?.cancel()
+    }
+  }, [debounceMs, writeToUrl])
+
+  // Update multiple parameters at once
+  const setValues = useCallback(
+    (updates: Partial<{ [K in keyof P]: P[K] extends Param<infer T> ? T : never }>) => {
+      const encodedUpdates: Record<string, { encoded: string | undefined; decoded: any }> = {}
+
+      for (const [key, value] of Object.entries(updates)) {
+        const param = params[key]
+        if (!param) continue
+
+        const encoded = param.encode(value)
+        encodedUpdates[key] = { encoded, decoded: value }
+        // Track what we're writing for causality
+        lastWrittenRef.current[key] = { encoded, decoded: value }
+      }
+
+      // Write to URL (debounced if configured)
+      if (debouncedWriteRef.current) {
+        debouncedWriteRef.current(encodedUpdates)
+      } else {
+        writeToUrl(encodedUpdates)
+      }
+    },
+    [params, writeToUrl]
   )
 
   return { values, setValues }
@@ -215,9 +385,14 @@ export function useUrlParams<P extends Record<string, Param<any>>>(
  * React hook for managing a single multi-value URL parameter.
  * Supports repeated params like ?tag=a&tag=b&tag=c
  *
+ * Features:
+ * - Bidirectional sync: state ↔ URL
+ * - Causality tracking: prevents feedback loops and lossy re-decoding
+ * - Optional debounce for high-frequency updates
+ *
  * @param key - Query parameter key
  * @param param - MultiParam encoder/decoder
- * @param push - Use pushState (true) or replaceState (false) when updating
+ * @param options - Options (debounce, push)
  * @returns Tuple of [value, setValue]
  *
  * @example
@@ -229,13 +404,25 @@ export function useUrlParams<P extends Record<string, Param<any>>>(
 export function useMultiUrlParam<T>(
   key: string,
   param: MultiParam<T>,
-  push = false
+  options: UseUrlParamOptions | boolean = {}
 ): [T, (value: T) => void] {
+  // Handle legacy boolean `push` argument for backwards compatibility
+  const opts: UseUrlParamOptions = typeof options === 'boolean'
+    ? { push: options }
+    : options
+  const { debounce: debounceMs = 0, push = false } = opts
+
   const strategy = getDefaultStrategy()
 
   // Use ref to avoid recreating setValue when param changes
   const paramRef = useRef(param)
   paramRef.current = param
+
+  // Causality tracking: track what we last wrote
+  const lastWrittenRef = useRef<{
+    encoded: MultiEncoded
+    decoded: T
+  } | null>(null)
 
   // Subscribe to URL changes
   const urlParams = useSyncExternalStore(
@@ -244,22 +431,33 @@ export function useMultiUrlParam<T>(
     getServerSnapshot
   )
 
-  // Decode current value from URL
-  const value = param.decode(urlParams[key] ?? [])
+  // Get encoded value from URL
+  const encoded = urlParams[key] ?? []
 
-  // Update URL when value changes
-  const setValue = useCallback(
-    (newValue: T) => {
+  // Decode value with causality tracking
+  let value: T
+  if (lastWrittenRef.current && arraysEqual(lastWrittenRef.current.encoded, encoded)) {
+    // We caused this URL change - use our authoritative value
+    value = lastWrittenRef.current.decoded
+  } else {
+    // External change or initial load - decode from URL
+    value = param.decode(encoded)
+    // Clear lastWritten since URL now has external value
+    lastWrittenRef.current = null
+  }
+
+  // Create the URL write function
+  const writeToUrl = useCallback(
+    (newEncoded: MultiEncoded) => {
       if (typeof window === 'undefined') return
 
       const currentParams = strategy.parse()
-      const encoded = paramRef.current.encode(newValue)
 
       // Update this parameter
-      if (encoded.length === 0) {
+      if (newEncoded.length === 0) {
         delete currentParams[key]
       } else {
-        currentParams[key] = encoded
+        currentParams[key] = newEncoded
       }
 
       // Build and update URL
@@ -275,15 +473,57 @@ export function useMultiUrlParam<T>(
     [key, push, strategy]
   )
 
+  // Create debounced write if needed
+  const debouncedWriteRef = useRef<ReturnType<typeof debounce<typeof writeToUrl>> | null>(null)
+
+  useEffect(() => {
+    if (debounceMs > 0) {
+      debouncedWriteRef.current = debounce(writeToUrl, debounceMs)
+    } else {
+      debouncedWriteRef.current = null
+    }
+    return () => {
+      debouncedWriteRef.current?.cancel()
+    }
+  }, [debounceMs, writeToUrl])
+
+  // Exposed setter
+  const setValue = useCallback(
+    (newValue: T) => {
+      const newEncoded = paramRef.current.encode(newValue)
+
+      // Track what we're writing for causality
+      lastWrittenRef.current = { encoded: newEncoded, decoded: newValue }
+
+      // Write to URL (debounced if configured)
+      if (debouncedWriteRef.current) {
+        debouncedWriteRef.current(newEncoded)
+      } else {
+        writeToUrl(newEncoded)
+      }
+    },
+    [writeToUrl]
+  )
+
   return [value, setValue]
+}
+
+/** Helper to compare arrays for equality */
+function arraysEqual<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
 /**
  * React hook for managing multiple multi-value URL parameters together.
  * Updates are batched into a single history entry.
  *
+ * Features:
+ * - Bidirectional sync: state ↔ URL
+ * - Causality tracking: prevents feedback loops and lossy re-decoding
+ * - Optional debounce for high-frequency updates
+ *
  * @param params - Object mapping keys to MultiParam types
- * @param push - Use pushState (true) or replaceState (false) when updating
+ * @param options - Options (debounce, push)
  * @returns Object with decoded values and update function
  *
  * @example
@@ -299,12 +539,21 @@ export function useMultiUrlParam<T>(
  */
 export function useMultiUrlParams<P extends Record<string, MultiParam<any>>>(
   params: P,
-  push = false
+  options: UseUrlParamOptions | boolean = {}
 ): {
   values: { [K in keyof P]: P[K] extends MultiParam<infer T> ? T : never }
   setValues: (updates: Partial<{ [K in keyof P]: P[K] extends MultiParam<infer T> ? T : never }>) => void
 } {
+  // Handle legacy boolean `push` argument for backwards compatibility
+  const opts: UseUrlParamOptions = typeof options === 'boolean'
+    ? { push: options }
+    : options
+  const { debounce: debounceMs = 0, push = false } = opts
+
   const strategy = getDefaultStrategy()
+
+  // Causality tracking: track what we last wrote per key
+  const lastWrittenRef = useRef<Record<string, { encoded: MultiEncoded; decoded: any }>>({})
 
   // Subscribe to URL changes
   const urlParams = useSyncExternalStore(
@@ -313,27 +562,34 @@ export function useMultiUrlParams<P extends Record<string, MultiParam<any>>>(
     getServerSnapshot
   )
 
-  // Decode all values from URL
+  // Decode all values from URL with causality tracking
   const values = Object.fromEntries(
-    Object.entries(params).map(([key, param]) => [
-      key,
-      param.decode(urlParams[key] ?? [])
-    ])
+    Object.entries(params).map(([key, param]) => {
+      const encoded = urlParams[key] ?? []
+      const lastWritten = lastWrittenRef.current[key]
+
+      if (lastWritten && arraysEqual(lastWritten.encoded, encoded)) {
+        // We caused this URL change - use our authoritative value
+        return [key, lastWritten.decoded]
+      } else {
+        // External change or initial load - decode from URL
+        const decoded = param.decode(encoded)
+        // Clear lastWritten for this key since URL now has external value
+        delete lastWrittenRef.current[key]
+        return [key, decoded]
+      }
+    })
   ) as { [K in keyof P]: P[K] extends MultiParam<infer T> ? T : never }
 
-  // Update multiple parameters at once
-  const setValues = useCallback(
-    (updates: Partial<{ [K in keyof P]: P[K] extends MultiParam<infer T> ? T : never }>) => {
+  // Create the URL write function
+  const writeToUrl = useCallback(
+    (updates: Record<string, MultiEncoded>) => {
       if (typeof window === 'undefined') return
 
       const currentParams = strategy.parse()
 
       // Apply all updates
-      for (const [key, value] of Object.entries(updates)) {
-        const param = params[key]
-        if (!param) continue
-
-        const encoded = param.encode(value)
+      for (const [key, encoded] of Object.entries(updates)) {
         if (encoded.length === 0) {
           delete currentParams[key]
         } else {
@@ -351,7 +607,46 @@ export function useMultiUrlParams<P extends Record<string, MultiParam<any>>>(
       // Trigger events to notify other hooks
       window.dispatchEvent(new PopStateEvent('popstate'))
     },
-    [params, push, strategy]
+    [push, strategy]
+  )
+
+  // Create debounced write if needed
+  const debouncedWriteRef = useRef<ReturnType<typeof debounce<typeof writeToUrl>> | null>(null)
+
+  useEffect(() => {
+    if (debounceMs > 0) {
+      debouncedWriteRef.current = debounce(writeToUrl, debounceMs)
+    } else {
+      debouncedWriteRef.current = null
+    }
+    return () => {
+      debouncedWriteRef.current?.cancel()
+    }
+  }, [debounceMs, writeToUrl])
+
+  // Update multiple parameters at once
+  const setValues = useCallback(
+    (updates: Partial<{ [K in keyof P]: P[K] extends MultiParam<infer T> ? T : never }>) => {
+      const encodedUpdates: Record<string, MultiEncoded> = {}
+
+      for (const [key, value] of Object.entries(updates)) {
+        const param = params[key]
+        if (!param) continue
+
+        const encoded = param.encode(value)
+        encodedUpdates[key] = encoded
+        // Track what we're writing for causality
+        lastWrittenRef.current[key] = { encoded, decoded: value }
+      }
+
+      // Write to URL (debounced if configured)
+      if (debouncedWriteRef.current) {
+        debouncedWriteRef.current(encodedUpdates)
+      } else {
+        writeToUrl(encodedUpdates)
+      }
+    },
+    [params, writeToUrl]
   )
 
   return { values, setValues }
