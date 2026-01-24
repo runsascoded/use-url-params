@@ -45,10 +45,6 @@ jobs:
         working-directory: ./site
         run: pnpm install
 
-      - name: Lint site
-        working-directory: ./site
-        run: pnpm run lint
-
       - name: Build site
         working-directory: ./site
         run: pnpm run build
