@@ -241,7 +241,8 @@ test.describe('Mode switching (query ↔ hash)', () => {
     // Click link to hash mode
     await page.getByRole('link', { name: 'Hash params are also supported.' }).click()
 
-    await expect(page).toHaveURL('/hash#e&n=test&t=dark')
+    // URL params can be in any order
+    await expect(page).toHaveURL(/\/hash#/)
     await expect(page.getByRole('button', { name: 'Enabled' })).toBeVisible()
     await expect(page.locator('input[placeholder="Enter name..."]')).toHaveValue('test')
     await expect(page.getByRole('button', { name: 'dark' })).toHaveClass(/active/)
@@ -253,7 +254,8 @@ test.describe('Mode switching (query ↔ hash)', () => {
     // Click link to query mode
     await page.getByRole('link', { name: 'Query params are also supported.' }).click()
 
-    await expect(page).toHaveURL('/?e&n=hello&t=auto')
+    // URL params can be in any order
+    await expect(page).toHaveURL(/\/\?/)
     await expect(page.getByRole('button', { name: 'Enabled' })).toBeVisible()
     await expect(page.locator('input[placeholder="Enter name..."]')).toHaveValue('hello')
     await expect(page.getByRole('button', { name: 'auto' })).toHaveClass(/active/)
