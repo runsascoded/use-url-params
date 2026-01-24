@@ -53,6 +53,7 @@ export function HashDemo() {
       multiTags={multiTags} setMultiTags={setMultiTags}
       multiIds={multiIds} setMultiIds={setMultiIds}
       batch={batch} setBatch={setBatch}
+      useUrlParam={useUrlParam}
     />
   )
 }

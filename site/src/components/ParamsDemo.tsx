@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import { FaGithub, FaTimes } from 'react-icons/fa'
 import Tooltip from '@mui/material/Tooltip'
-import { clearParams } from 'use-prms'
+import { clearParams, type Param } from 'use-prms'
+import { FloatDemo } from './FloatDemo'
 
 const themes = ['light', 'dark', 'auto'] as const
 export type Theme = typeof themes[number]
@@ -51,15 +52,39 @@ const paramKeyColors: Record<string, number> = {
   id: 7,     // multi ids - Multi-Value section (same color as tag)
   bx: 8,     // batch x - Batch Updates section
   by: 8,     // batch y - Batch Updates section
+  v: 9,      // binary float - Binary Encoding section
+  f: 9,      // approx float - Approximate Encoding section
+  xy: 9,     // point - Point Encoding section
 }
 
 // Keys that should highlight together (same section)
 const keyGroups: string[][] = [
-  ['c', 'r'],      // Numbers section
-  ['y', 'rg'],     // Code Mapping section
-  ['tag', 'id'],   // Multi-Value section
-  ['bx', 'by'],    // Batch section
+  ['c', 'r'],              // Numbers section
+  ['y', 'rg'],             // Code Mapping section
+  ['tag', 'id'],           // Multi-Value section
+  ['bx', 'by'],            // Batch section
+  ['v', 'f', 'xy'],        // Binary Encoding sections
 ]
+
+// Map param keys to section ids for click-to-jump
+const paramKeySections: Record<string, string> = {
+  e: 'section-boolean',
+  n: 'section-string',
+  c: 'section-numbers',
+  r: 'section-numbers',
+  t: 'section-enum',
+  tags: 'section-strings',
+  p: 'section-pagination',
+  y: 'section-codes',
+  rg: 'section-codes',
+  tag: 'section-multi',
+  id: 'section-multi',
+  bx: 'section-batch',
+  by: 'section-batch',
+  v: 'section-binary',
+  f: 'section-approximate',
+  xy: 'section-point',
+}
 
 // Expand a set of active keys to include all keys in the same group
 function expandKeyGroups(keys: string[]): string[] {
@@ -119,11 +144,16 @@ function UrlDisplay({
           {segments.map((seg, i) => {
             const isActive = activeKeys.includes(seg.key)
             const bgColor = isActive ? paramColorsStrong[seg.colorIdx] : paramColors[seg.colorIdx]
+            const sectionId = paramKeySections[seg.key]
+            const handleClick = sectionId ? () => {
+              document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            } : undefined
             return (
               <span
                 key={i}
                 className={isActive ? 'highlight' : ''}
-                style={{ backgroundColor: bgColor, borderRadius: '3px', padding: '0 2px' }}
+                style={{ backgroundColor: bgColor, borderRadius: '3px', padding: '0 2px', cursor: sectionId ? 'pointer' : undefined }}
+                onClick={handleClick}
                 onMouseEnter={() => onHoverKey([seg.key])}
                 onMouseLeave={() => onHoverKey(null)}
               >
@@ -167,6 +197,8 @@ export interface ParamValues {
   setMultiIds: (v: number[]) => void
   batch: { bx: number; by: number }
   setBatch: (v: Partial<{ bx: number; by: number }>) => void
+  // Hook for FloatDemo (passed from parent to use correct mode)
+  useUrlParam: <T>(key: string, param: Param<T>, options?: { debounce?: number }) => [T, (v: T) => void]
 }
 
 interface ParamsDemoProps extends ParamValues {
@@ -187,6 +219,7 @@ export function ParamsDemo({
   multiTags, setMultiTags,
   multiIds, setMultiIds,
   batch, setBatch,
+  useUrlParam,
 }: ParamsDemoProps) {
   const location = useLocation()
   const [activeKeys, setActiveKeys] = useState<string[]>([])
@@ -308,7 +341,7 @@ export function ParamsDemo({
       <UrlDisplay search={search} activeKeys={combinedActiveKeys} onReset={handleReset} mode={mode} onHoverKey={setUrlHoverKeys} />
 
       {/* Boolean */}
-      <section className="section" style={getSectionStyle(['e'])} onMouseEnter={activate('e')} onMouseLeave={deactivate}>
+      <section id="section-boolean" className="section" style={getSectionStyle(['e'])} onMouseEnter={activate('e')} onMouseLeave={deactivate}>
         <h2>Boolean (boolParam)</h2>
         <div className="controls">
           <button
@@ -327,7 +360,7 @@ export function ParamsDemo({
       </section>
 
       {/* String */}
-      <section className="section" style={getSectionStyle(['n'])} onMouseEnter={activate('n')} onMouseLeave={deactivate}>
+      <section id="section-string" className="section" style={getSectionStyle(['n'])} onMouseEnter={activate('n')} onMouseLeave={deactivate}>
         <h2>String (stringParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -349,7 +382,7 @@ export function ParamsDemo({
       </section>
 
       {/* Numbers */}
-      <section className="section" style={getSectionStyle(['c', 'r'])} onMouseEnter={activate('c', 'r')} onMouseLeave={deactivate}>
+      <section id="section-numbers" className="section" style={getSectionStyle(['c', 'r'])} onMouseEnter={activate('c', 'r')} onMouseLeave={deactivate}>
         <h2>Numbers (intParam, floatParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -382,7 +415,7 @@ const [ratio, setRatio] = useUrlParam('r', floatParam(1.0))`}</pre>
       </section>
 
       {/* Enum */}
-      <section className="section" style={getSectionStyle(['t'])} onMouseEnter={activate('t')} onMouseLeave={deactivate}>
+      <section id="section-enum" className="section" style={getSectionStyle(['t'])} onMouseEnter={activate('t')} onMouseLeave={deactivate}>
         <h2>Enum (enumParam)</h2>
         <div className="controls">
           {themes.map(t => (
@@ -407,7 +440,7 @@ const [theme, setTheme] = useUrlParam('t', enumParam<Theme>('light', themes))`}<
       </section>
 
       {/* Strings Array */}
-      <section className="section" style={getSectionStyle(['tags'])} onMouseEnter={activate('tags')} onMouseLeave={deactivate}>
+      <section id="section-strings" className="section" style={getSectionStyle(['tags'])} onMouseEnter={activate('tags')} onMouseLeave={deactivate}>
         <h2>String Array (stringsParam)</h2>
         <div className="controls">
           <div className="tag-list">
@@ -430,7 +463,7 @@ const [tags, setTags] = useUrlParam('tags', stringsParam([], ' '))`}</pre>
       </section>
 
       {/* Pagination */}
-      <section className="section" style={getSectionStyle(['p'])} onMouseEnter={activate('p')} onMouseLeave={deactivate}>
+      <section id="section-pagination" className="section" style={getSectionStyle(['p'])} onMouseEnter={activate('p')} onMouseLeave={deactivate}>
         <h2>Pagination (paginationParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -473,7 +506,7 @@ const [page, setPage] = useUrlParam('p', paginationParam({ offset: 0, pageSize: 
       </section>
 
       {/* Code Params */}
-      <section className="section" style={getSectionStyle(['y', 'rg'])} onMouseEnter={activate('y', 'rg')} onMouseLeave={deactivate}>
+      <section id="section-codes" className="section" style={getSectionStyle(['y', 'rg'])} onMouseEnter={activate('y', 'rg')} onMouseLeave={deactivate}>
         <h2>Code Mapping (codeParam, codesParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -520,7 +553,7 @@ const [regions, setRegions] = useUrlParam('rg', codesParam<Region>([], regionCod
       </section>
 
       {/* Multi-value params */}
-      <section className="section" style={getSectionStyle(['tag', 'id'])} onMouseEnter={activate('tag', 'id')} onMouseLeave={deactivate}>
+      <section id="section-multi" className="section" style={getSectionStyle(['tag', 'id'])} onMouseEnter={activate('tag', 'id')} onMouseLeave={deactivate}>
         <h2>Multi-Value (useMultiUrlParam)</h2>
         <div className="controls">
           <div className="control-group">
@@ -569,7 +602,7 @@ const [ids, setIds] = useMultiUrlParam('id', multiIntParam([]))`}</pre>
       </section>
 
       {/* Batch Updates */}
-      <section className="section" style={getSectionStyle(['bx', 'by'])} onMouseEnter={activate('bx', 'by')} onMouseLeave={deactivate}>
+      <section id="section-batch" className="section" style={getSectionStyle(['bx', 'by'])} onMouseEnter={activate('bx', 'by')} onMouseLeave={deactivate}>
         <h2>Batch Updates (useUrlParams)</h2>
         <div className="controls">
           <div className="control-group">
@@ -618,6 +651,19 @@ const { values, setValues } = useUrlParams({
 // setValues({ bx: 100, by: 200 }) - updates both atomically`}</pre>
         </details>
       </section>
+
+      {/* Advanced: Binary Encoding */}
+      <hr className="section-divider" />
+      <h2 className="advanced-header">Advanced: Binary Encoding</h2>
+      <div className="section-intro">
+        <p>
+          Some data can be very verbose when stored naively in URLs (e.g. floating-point numbers). use-prms comes with built-in base64 encoding for binary data, which can be more compact than naive <code>toString</code> representations.
+        </p>
+        <p>
+          This section demonstrates using binary encodings for floats and XY-points, and how to build custom encodings.
+        </p>
+      </div>
+      <FloatDemo useUrlParam={useUrlParam} />
     </>
   )
 }
