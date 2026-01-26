@@ -5,19 +5,49 @@
  * Use these to create compact URL representations of complex data structures.
  */
 
+import { ALPHABETS, resolveAlphabet, validateAlphabet, createLookupMap, type Alphabet, type AlphabetName } from './alphabet.js'
+
 /**
  * URL-safe base64 alphabet (RFC 4648 base64url)
  * Uses - and _ instead of + and / for URL safety
+ * @deprecated Use ALPHABETS.rfc4648 instead
  */
-const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+const BASE64_CHARS = ALPHABETS.rfc4648
 
-// Lookup table for fast decoding
-const BASE64_LOOKUP = new Map(BASE64_CHARS.split('').map((c, i) => [c, i]))
+// Default lookup table for fast decoding (rfc4648)
+const DEFAULT_LOOKUP = createLookupMap(ALPHABETS.rfc4648)
+
+// Cache for custom alphabet lookup maps
+const lookupCache = new Map<string, Map<string, number>>()
+
+function getLookupMap(alphabet: string): Map<string, number> {
+  if (alphabet === ALPHABETS.rfc4648) return DEFAULT_LOOKUP
+  let lookup = lookupCache.get(alphabet)
+  if (!lookup) {
+    lookup = createLookupMap(alphabet)
+    lookupCache.set(alphabet, lookup)
+  }
+  return lookup
+}
 
 /**
- * Encode a Uint8Array to base64url string
+ * Options for base64 encoding/decoding
  */
-export function base64Encode(bytes: Uint8Array): string {
+export interface Base64Options {
+  /**
+   * Alphabet to use: preset name or 64-character string
+   * @default 'rfc4648'
+   */
+  alphabet?: Alphabet
+}
+
+/**
+ * Encode a Uint8Array to base64 string
+ * @param bytes - The bytes to encode
+ * @param options - Encoding options (alphabet)
+ */
+export function base64Encode(bytes: Uint8Array, options?: Base64Options): string {
+  const chars = options?.alphabet ? resolveAlphabet(options.alphabet) : ALPHABETS.rfc4648
   let result = ''
   let i = 0
 
@@ -29,15 +59,15 @@ export function base64Encode(bytes: Uint8Array): string {
     // Combine 3 bytes into 24 bits, then split into 4 6-bit values
     const n = (b0 << 16) | (b1 << 8) | b2
 
-    result += BASE64_CHARS[(n >> 18) & 0x3f]
-    result += BASE64_CHARS[(n >> 12) & 0x3f]
+    result += chars[(n >> 18) & 0x3f]
+    result += chars[(n >> 12) & 0x3f]
 
     // Only add padding chars if we have the bytes
     if (i - 2 < bytes.length) {
-      result += BASE64_CHARS[(n >> 6) & 0x3f]
+      result += chars[(n >> 6) & 0x3f]
     }
     if (i - 1 < bytes.length) {
-      result += BASE64_CHARS[n & 0x3f]
+      result += chars[n & 0x3f]
     }
   }
 
@@ -45,19 +75,24 @@ export function base64Encode(bytes: Uint8Array): string {
 }
 
 /**
- * Decode a base64url string to Uint8Array
+ * Decode a base64 string to Uint8Array
+ * @param str - The base64 string to decode
+ * @param options - Decoding options (alphabet)
  */
-export function base64Decode(str: string): Uint8Array {
+export function base64Decode(str: string, options?: Base64Options): Uint8Array {
+  const alphabet = options?.alphabet ? resolveAlphabet(options.alphabet) : ALPHABETS.rfc4648
+  const lookup = getLookupMap(alphabet)
+
   // Remove any padding (we don't require it)
   str = str.replace(/=+$/, '')
 
   const bytes: number[] = []
 
   for (let i = 0; i < str.length; i += 4) {
-    const c0 = BASE64_LOOKUP.get(str[i]) ?? 0
-    const c1 = BASE64_LOOKUP.get(str[i + 1]) ?? 0
-    const c2 = i + 2 < str.length ? BASE64_LOOKUP.get(str[i + 2]) ?? 0 : 0
-    const c3 = i + 3 < str.length ? BASE64_LOOKUP.get(str[i + 3]) ?? 0 : 0
+    const c0 = lookup.get(str[i]) ?? 0
+    const c1 = lookup.get(str[i + 1]) ?? 0
+    const c2 = i + 2 < str.length ? lookup.get(str[i + 2]) ?? 0 : 0
+    const c3 = i + 3 < str.length ? lookup.get(str[i + 3]) ?? 0 : 0
 
     // Combine 4 6-bit values into 24 bits, then split into 3 bytes
     const n = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
@@ -83,6 +118,12 @@ export interface BinaryParamOptions<T> {
    * Convert bytes to value
    */
   fromBytes: (bytes: Uint8Array) => T
+
+  /**
+   * Alphabet to use: preset name or 64-character string
+   * @default 'rfc4648'
+   */
+  alphabet?: Alphabet
 }
 
 import type { Param } from './index.js'
@@ -106,19 +147,20 @@ import type { Param } from './index.js'
  * ```
  */
 export function binaryParam<T>(options: BinaryParamOptions<T>): Param<T | null> {
-  const { toBytes, fromBytes } = options
+  const { toBytes, fromBytes, alphabet } = options
+  const encodeOpts = alphabet ? { alphabet } : undefined
 
   return {
     encode: (value) => {
       if (value === null) return undefined
       const bytes = toBytes(value)
       if (bytes.length === 0) return undefined
-      return base64Encode(bytes)
+      return base64Encode(bytes, encodeOpts)
     },
     decode: (encoded) => {
       if (encoded === undefined || encoded === '') return null
       try {
-        const bytes = base64Decode(encoded)
+        const bytes = base64Decode(encoded, encodeOpts)
         return fromBytes(bytes)
       } catch {
         return null
@@ -133,9 +175,10 @@ export function binaryParam<T>(options: BinaryParamOptions<T>): Param<T | null> 
  */
 export function base64Param<T>(
   toBytes: (value: T) => Uint8Array,
-  fromBytes: (bytes: Uint8Array) => T
+  fromBytes: (bytes: Uint8Array) => T,
+  alphabet?: Alphabet
 ): Param<T | null> {
-  return binaryParam({ toBytes, fromBytes })
+  return binaryParam({ toBytes, fromBytes, alphabet })
 }
 
 /**
@@ -156,5 +199,10 @@ export function bytesToFloat(bytes: Uint8Array): number {
   return view.getFloat64(0, false)
 }
 
-// Re-export the alphabet for custom implementations
+// Re-export alphabet utilities
+export { ALPHABETS, resolveAlphabet, validateAlphabet, createLookupMap, type Alphabet, type AlphabetName } from './alphabet.js'
+
+/**
+ * @deprecated Use ALPHABETS.rfc4648 instead
+ */
 export { BASE64_CHARS }

@@ -5,7 +5,7 @@
  * for encoding floats with configurable precision.
  */
 
-import { base64Encode, base64Decode, floatToBytes, bytesToFloat } from './binary.js'
+import { base64Encode, base64Decode, floatToBytes, bytesToFloat, type Base64Options, type Alphabet, resolveAlphabet, createLookupMap } from './binary.js'
 
 /**
  * Decomposed IEEE 754 double-precision float
@@ -372,19 +372,54 @@ export class BitBuffer {
   /**
    * Convert buffer to URL-safe base64 string
    *
-   * This is the primary way to serialize a BitBuffer for use in URL parameters.
+   * Encodes bits directly to base64 (6 bits per character) for maximum compactness.
+   * This is more efficient than going through bytes when bit count isn't a multiple of 8.
+   *
+   * @param options - Base64 options (alphabet)
    */
-  toBase64(): string {
-    return base64Encode(this.toBytes())
+  toBase64(options?: Base64Options): string {
+    const alphabet = resolveAlphabet(options?.alphabet ?? 'rfc4648')
+
+    // Pad to multiple of 6 bits
+    const overhang = this.end % 6
+    if (overhang) {
+      this.encodeInt(0, 6 - overhang)
+    }
+
+    const numChars = this.end / 6
+    this.seek(0)
+
+    let result = ''
+    for (let i = 0; i < numChars; i++) {
+      result += alphabet[this.decodeInt(6)]
+    }
+    return result
   }
 
   /**
    * Create a BitBuffer from a URL-safe base64 string
    *
-   * This is the primary way to deserialize a URL parameter back to a BitBuffer.
+   * Decodes base64 directly to bits (6 bits per character).
+   *
+   * @param str - The base64 string to decode
+   * @param options - Base64 options (alphabet)
    */
-  static fromBase64(str: string): BitBuffer {
-    return BitBuffer.fromBytes(base64Decode(str))
+  static fromBase64(str: string, options?: Base64Options): BitBuffer {
+    const alphabet = resolveAlphabet(options?.alphabet ?? 'rfc4648')
+    const lookup = createLookupMap(alphabet)
+
+    const buf = new BitBuffer()
+
+    for (const char of str) {
+      const idx = lookup.get(char)
+      if (idx === undefined) {
+        throw new Error(`Invalid base64 character: '${char}'`)
+      }
+      buf.encodeInt(idx, 6)
+    }
+
+    buf.seek(0)
+    return buf
   }
 }
 
@@ -422,6 +457,8 @@ export interface FloatParamOptions {
   mant?: number
   /** For lossy base64: string shorthand like '5+22' (exp+mant) */
   precision?: string
+  /** For base64: alphabet preset or 64-char string */
+  alphabet?: Alphabet
 }
 
 /**
@@ -458,6 +495,7 @@ export function floatParam(optsOrDefault: number | FloatParamOptions = 0): Param
     exp,
     mant,
     precision,
+    alphabet,
   } = opts
 
   // Validate options
@@ -485,17 +523,17 @@ export function floatParam(optsOrDefault: number | FloatParamOptions = 0): Param
         throw new Error('Both exp and mant must be specified together')
       }
       // Lossy base64 with explicit exp/mant
-      return createLossyBase64Param(defaultValue, { expBits: exp, mantBits: mant })
+      return createLossyBase64Param(defaultValue, { expBits: exp, mantBits: mant }, alphabet)
     }
 
     if (hasPrecision) {
       // Lossy base64 with string precision
       const { exp: e, mant: m } = parsePrecisionString(precision)
-      return createLossyBase64Param(defaultValue, { expBits: e, mantBits: m })
+      return createLossyBase64Param(defaultValue, { expBits: e, mantBits: m }, alphabet)
     }
 
     // Lossless base64 (default)
-    return createLosslessBase64Param(defaultValue)
+    return createLosslessBase64Param(defaultValue, alphabet)
   }
 
   // String encoding
@@ -510,16 +548,17 @@ export function floatParam(optsOrDefault: number | FloatParamOptions = 0): Param
 /**
  * Lossless base64 encoding (full 64-bit IEEE 754)
  */
-function createLosslessBase64Param(defaultValue: number): Param<number> {
+function createLosslessBase64Param(defaultValue: number, alphabet?: Alphabet): Param<number> {
+  const opts = alphabet ? { alphabet } : undefined
   return {
     encode: (value) => {
       if (value === defaultValue) return undefined
-      return base64Encode(floatToBytes(value))
+      return base64Encode(floatToBytes(value), opts)
     },
     decode: (encoded) => {
       if (encoded === undefined || encoded === '') return defaultValue
       try {
-        return bytesToFloat(base64Decode(encoded))
+        return bytesToFloat(base64Decode(encoded, opts))
       } catch {
         return defaultValue
       }
@@ -530,18 +569,19 @@ function createLosslessBase64Param(defaultValue: number): Param<number> {
 /**
  * Lossy base64 encoding (fixed-point with shared exponent)
  */
-function createLossyBase64Param(defaultValue: number, scheme: PrecisionScheme): Param<number> {
+function createLossyBase64Param(defaultValue: number, scheme: PrecisionScheme, alphabet?: Alphabet): Param<number> {
+  const opts = alphabet ? { alphabet } : undefined
   return {
     encode: (value) => {
       if (value === defaultValue) return undefined
       const buf = new BitBuffer()
       buf.encodeFixedPoints([value], scheme)
-      return buf.toBase64()
+      return buf.toBase64(opts)
     },
     decode: (encoded) => {
       if (encoded === undefined || encoded === '') return defaultValue
       try {
-        const buf = BitBuffer.fromBase64(encoded)
+        const buf = BitBuffer.fromBase64(encoded, opts)
         const [value] = buf.decodeFixedPoints(1, scheme)
         return value
       } catch {
@@ -624,6 +664,8 @@ export interface PointParamOptions {
   precision?: number | PrecisionScheme
   /** Default point when param is missing */
   default?: Point
+  /** For base64: alphabet preset or 64-char string */
+  alphabet?: Alphabet
 }
 
 /**
@@ -649,10 +691,12 @@ export function pointParam(opts: PointParamOptions = {}): Param<Point | null> {
     decimals = 2,
     precision,
     default: defaultPoint = null,
+    alphabet,
   } = opts
 
   const scheme = resolvePrecision(precision)
   const multiplier = Math.pow(10, decimals)
+  const base64Opts = alphabet ? { alphabet } : undefined
 
   return {
     encode: (point) => {
@@ -676,7 +720,7 @@ export function pointParam(opts: PointParamOptions = {}): Param<Point | null> {
         // Binary encoding with shared exponent
         const buf = new BitBuffer()
         buf.encodeFixedPoints([point.x, point.y], scheme)
-        return buf.toBase64()
+        return buf.toBase64(base64Opts)
       }
     },
     decode: (encoded) => {
@@ -702,7 +746,7 @@ export function pointParam(opts: PointParamOptions = {}): Param<Point | null> {
           if (isNaN(x) || isNaN(y)) return defaultPoint
           return { x, y }
         } else {
-          const buf = BitBuffer.fromBase64(encoded)
+          const buf = BitBuffer.fromBase64(encoded, base64Opts)
           const [x, y] = buf.decodeFixedPoints(2, scheme)
           return { x, y }
         }
