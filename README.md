@@ -14,6 +14,7 @@ Type-safe URL-parameter (query and hash) management with minimal, human-readable
 - [Custom Params](#custom)
 - [Batch Updates](#batch)
 - [URL Encoding](#encoding)
+- [Binary Encoding](#binary)
 - [Framework-Agnostic Core](#core)
 - [Hash Params](#hash)
 - [API Reference](#api)
@@ -208,6 +209,67 @@ setDevices(['gym', 'bedroom'])
 // URL: ?d=gym+bedroom
 ```
 
+## Binary Encoding <a id="binary"></a>
+
+For complex data that doesn't fit well into string encoding, `use-prms` provides binary encoding utilities with URL-safe base64.
+
+### BitBuffer
+
+Low-level bit packing for custom binary formats:
+
+```typescript
+import { BitBuffer } from 'use-prms'
+
+// Encoding
+const buf = new BitBuffer()
+buf.encodeInt(myEnum, 3)      // 3 bits for enum (0-7)
+buf.encodeInt(myCount, 8)     // 8 bits for count (0-255)
+buf.encodeBigInt(myId, 48)    // 48 bits for ID
+const urlParam = buf.toBase64()
+
+// Decoding
+const buf = BitBuffer.fromBase64(urlParam)
+const myEnum = buf.decodeInt(3)
+const myCount = buf.decodeInt(8)
+const myId = buf.decodeBigInt(48)
+```
+
+### Float Params
+
+Encode floats compactly as base64:
+
+```typescript
+import { floatParam } from 'use-prms'
+
+// Lossless (11 chars, exact IEEE 754)
+const [zoom, setZoom] = useUrlState('z', floatParam(1.0))
+
+// Lossy (fewer chars, configurable precision)
+const [lat, setLat] = useUrlState('lat', floatParam({
+  default: 0,
+  exp: 5,      // exponent bits
+  mant: 22,    // mantissa bits (~7 decimal digits)
+}))
+```
+
+### Custom Alphabets
+
+Choose between standard base64url or ASCII-sorted alphabet:
+
+```typescript
+import { ALPHABETS, binaryParam, floatParam } from 'use-prms'
+
+// Standard RFC 4648 (default)
+// ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_
+
+// ASCII-sorted (lexicographic sort = numeric sort)
+// -0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz
+
+const param = floatParam({ default: 0, alphabet: 'sortable' })
+```
+
+The `sortable` alphabet is useful when encoded strings need to sort in the same order as their numeric values (e.g., for database indexing).
+
 ## Framework-Agnostic Core <a id="core"></a>
 
 Use the core utilities without React:
@@ -312,6 +374,17 @@ type MultiParam<T> = {
 | `multiStringParam(init?)` | `MultiParam<string[]>` | Repeated string params |
 | `multiIntParam(init?)` | `MultiParam<number[]>` | Repeated integer params |
 | `multiFloatParam(init?)` | `MultiParam<number[]>` | Repeated float params |
+
+### Binary Encoding
+
+| Export | Description |
+|--------|-------------|
+| `BitBuffer` | Bit-level buffer for packing/unpacking arbitrary bit widths |
+| `binaryParam(opts)` | Create param from `toBytes`/`fromBytes` converters |
+| `base64Param(toBytes, fromBytes)` | Shorthand for `binaryParam` |
+| `base64Encode(bytes, opts?)` | Encode `Uint8Array` to base64 string |
+| `base64Decode(str, opts?)` | Decode base64 string to `Uint8Array` |
+| `ALPHABETS` | Preset alphabets: `rfc4648` (default), `sortable` (ASCII-ordered) |
 
 ### Core Utilities
 
