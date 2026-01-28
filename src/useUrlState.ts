@@ -197,8 +197,10 @@ export function useUrlState<T>(
       const newUrl = strategy.buildUrl(url, currentParams)
 
       const method = push ? 'pushState' : 'replaceState'
-      window.history[method]({}, '', newUrl)
+      window.history[method]({ ...window.history.state }, '', newUrl)
 
+      // Notify React Router and other libraries that listen to popstate
+      window.dispatchEvent(new PopStateEvent('popstate'))
     },
     [key, push, strategy]
   )
@@ -329,8 +331,10 @@ export function useUrlStates<P extends Record<string, Param<any>>>(
       const newUrl = strategy.buildUrl(url, currentParams)
 
       const method = push ? 'pushState' : 'replaceState'
-      window.history[method]({}, '', newUrl)
+      window.history[method]({ ...window.history.state }, '', newUrl)
 
+      // Notify React Router and other libraries that listen to popstate
+      window.dispatchEvent(new PopStateEvent('popstate'))
     },
     [push, strategy]
   )
@@ -461,8 +465,10 @@ export function useMultiUrlState<T>(
       const newUrl = strategy.buildUrl(url, currentParams)
 
       const method = push ? 'pushState' : 'replaceState'
-      window.history[method]({}, '', newUrl)
+      window.history[method]({ ...window.history.state }, '', newUrl)
 
+      // Notify React Router and other libraries that listen to popstate
+      window.dispatchEvent(new PopStateEvent('popstate'))
     },
     [key, push, strategy]
   )
@@ -596,8 +602,10 @@ export function useMultiUrlStates<P extends Record<string, MultiParam<any>>>(
       const newUrl = strategy.buildUrl(url, currentParams)
 
       const method = push ? 'pushState' : 'replaceState'
-      window.history[method]({}, '', newUrl)
+      window.history[method]({ ...window.history.state }, '', newUrl)
 
+      // Notify React Router and other libraries that listen to popstate
+      window.dispatchEvent(new PopStateEvent('popstate'))
     },
     [push, strategy]
   )

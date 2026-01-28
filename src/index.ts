@@ -114,7 +114,10 @@ export function updateUrl(params: Record<string, Encoded>, push = false): void {
   url.search = search
 
   const method = push ? 'pushState' : 'replaceState'
-  window.history[method]({}, '', url.toString())
+  window.history[method]({ ...window.history.state }, '', url.toString())
+
+  // Notify React Router and other libraries that listen to popstate
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 export * from './params.js'

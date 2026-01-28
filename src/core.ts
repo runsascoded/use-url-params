@@ -197,7 +197,10 @@ export function clearParams(strategy: 'query' | 'hash' = 'query'): void {
     url.search = ''
   }
   // replaceState triggers our custom event automatically via the patch
-  window.history.replaceState({}, '', url.toString())
+  window.history.replaceState({ ...window.history.state }, '', url.toString())
+
+  // Notify React Router and other libraries that listen to popstate
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 // Default strategy (can be changed by entry points like hash.ts)
