@@ -38,12 +38,10 @@ function patchHistoryApi() {
   history.pushState = function(state, title, url) {
     originalPushState(state, title, url);
     window.dispatchEvent(new CustomEvent(LOCATION_CHANGE_EVENT));
-    window.dispatchEvent(new PopStateEvent("popstate", { state }));
   };
   history.replaceState = function(state, title, url) {
     originalReplaceState(state, title, url);
     window.dispatchEvent(new CustomEvent(LOCATION_CHANGE_EVENT));
-    window.dispatchEvent(new PopStateEvent("popstate", { state }));
   };
 }
 patchHistoryApi();
@@ -111,7 +109,8 @@ function clearParams(strategy = "query") {
   } else {
     url.search = "";
   }
-  window.history.replaceState({}, "", url.toString());
+  window.history.replaceState({ ...window.history.state }, "", url.toString());
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 var defaultStrategy = queryStrategy;
 function getDefaultStrategy() {
@@ -378,7 +377,7 @@ function useUrlState(key, param, options = {}) {
       const url = new URL(window.location.href);
       const newUrl = strategy.buildUrl(url, currentParams);
       const method = push ? "pushState" : "replaceState";
-      window.history[method]({}, "", newUrl);
+      window.history[method]({ ...window.history.state }, "", newUrl);
       window.dispatchEvent(new PopStateEvent("popstate"));
     },
     [key, push, strategy]
@@ -445,7 +444,7 @@ function useUrlStates(params, options = {}) {
       const url = new URL(window.location.href);
       const newUrl = strategy.buildUrl(url, currentParams);
       const method = push ? "pushState" : "replaceState";
-      window.history[method]({}, "", newUrl);
+      window.history[method]({ ...window.history.state }, "", newUrl);
       window.dispatchEvent(new PopStateEvent("popstate"));
     },
     [push, strategy]
@@ -513,7 +512,7 @@ function useMultiUrlState(key, param, options = {}) {
       const url = new URL(window.location.href);
       const newUrl = strategy.buildUrl(url, currentParams);
       const method = push ? "pushState" : "replaceState";
-      window.history[method]({}, "", newUrl);
+      window.history[method]({ ...window.history.state }, "", newUrl);
       window.dispatchEvent(new PopStateEvent("popstate"));
     },
     [key, push, strategy]
@@ -583,7 +582,7 @@ function useMultiUrlStates(params, options = {}) {
       const url = new URL(window.location.href);
       const newUrl = strategy.buildUrl(url, currentParams);
       const method = push ? "pushState" : "replaceState";
-      window.history[method]({}, "", newUrl);
+      window.history[method]({ ...window.history.state }, "", newUrl);
       window.dispatchEvent(new PopStateEvent("popstate"));
     },
     [push, strategy]
@@ -1289,7 +1288,8 @@ function updateUrl(params, push = false) {
   const search = serializeParams(params);
   url.search = search;
   const method = push ? "pushState" : "replaceState";
-  window.history[method]({}, "", url.toString());
+  window.history[method]({ ...window.history.state }, "", url.toString());
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 export { ALPHABETS, BASE64_CHARS, BitBuffer, precisionSchemes as PRECISION_SCHEMES, base64Decode, base64Encode, base64FloatParam, base64Param, binaryParam, boolParam, bytesToFloat, clearParams, codeParam, codesParam, createLookupMap, defStringParam, encodeFloatAllModes, encodePointAllModes, enumParam, floatParam, floatToBytes, fromFixedPoint, fromFloat, getCurrentParams, getDefaultStrategy, hashStrategy, intParam, multiFloatParam, multiIntParam, multiStringParam, notifyLocationChange, numberArrayParam, optIntParam, paginationParam, parseMultiParams, parseParams, pointParam, precisionSchemes, queryStrategy, resolveAlphabet, resolvePrecision, serializeMultiParams, serializeParams, setDefaultStrategy, stringParam, stringsParam, toFixedPoint, toFloat, updateUrl, useMultiUrlState, useMultiUrlStates, useUrlState, useUrlStates, validateAlphabet };
